@@ -1,0 +1,633 @@
+name: MAX SPEED RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-2022
+    timeout-minutes: 350
+
+    steps:
+
+      # ============================================================
+      # 1. CREDENTIALS
+      # ============================================================
+      - name: Set Credentials
+        shell: powershell
+        run: |
+          $RDP_PASSWORD = "Karthick@2026"
+          $TAILSCALE_AUTHKEY = "tskey-auth-k698UnmFHW11CNTRL-hrrGqc92DdiWLJuSCLLXci4bzBhnGHhP"
+
+          "RDP_PASSWORD=$RDP_PASSWORD" | Out-File `
+            -FilePath $env:GITHUB_ENV -Append
+
+          "TAILSCALE_AUTHKEY=$TAILSCALE_AUTHKEY" | Out-File `
+            -FilePath $env:GITHUB_ENV -Append
+
+          Write-Host "Credentials configured."
+
+      # ============================================================
+      # 2. ENABLE RDP
+      # ============================================================
+      - name: Configure RDP
+        shell: powershell
+        run: |
+          Write-Host "=== CONFIGURING RDP ==="
+
+          Set-ItemProperty `
+            -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
+            -Name "fDenyTSConnections" `
+            -Value 0
+
+          Set-ItemProperty `
+            -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" `
+            -Name "UserAuthentication" `
+            -Value 1
+
+          Set-ItemProperty `
+            -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" `
+            -Name "SecurityLayer" `
+            -Value 1
+
+          Enable-NetFirewallRule `
+            -DisplayGroup "Remote Desktop" `
+            -ErrorAction SilentlyContinue
+
+          Set-Service `
+            -Name TermService `
+            -StartupType Automatic
+
+          Write-Host "RDP enabled."
+
+      # ============================================================
+      # 3. CREATE RDP USER
+      # ============================================================
+      - name: Create RDP User
+        shell: powershell
+        run: |
+          Write-Host "=== CREATING RDP USER ==="
+
+          $username = "RDP"
+          $password = ConvertTo-SecureString `
+            $env:RDP_PASSWORD `
+            -AsPlainText `
+            -Force
+
+          $oldUser = Get-LocalUser `
+            -Name $username `
+            -ErrorAction SilentlyContinue
+
+          if ($oldUser) {
+              Remove-LocalUser -Name $username
+          }
+
+          New-LocalUser `
+            -Name $username `
+            -Password $password `
+            -FullName "RDP User" `
+            -Description "Remote Desktop User" `
+            -PasswordNeverExpires:$true
+
+          Add-LocalGroupMember `
+            -Group "Administrators" `
+            -Member $username
+
+          Add-LocalGroupMember `
+            -Group "Remote Desktop Users" `
+            -Member $username
+
+          Write-Host "RDP user created."
+
+      # ============================================================
+      # 4. MAX WINDOWS PERFORMANCE
+      # ============================================================
+      - name: MAX Windows Performance
+        shell: powershell
+        run: |
+          Write-Host "=== MAX WINDOWS PERFORMANCE ==="
+
+          # High performance
+          powercfg /setactive SCHEME_MIN
+
+          # Prevent sleep
+          powercfg /change standby-timeout-ac 0
+          powercfg /change monitor-timeout-ac 0
+          powercfg /change disk-timeout-ac 0
+
+          # Visual effects
+          New-Item `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" `
+            -Force | Out-Null
+
+          Set-ItemProperty `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" `
+            -Name "VisualFXSetting" `
+            -Type DWord `
+            -Value 2
+
+          # Wallpaper OFF
+          New-Item `
+            -Path "HKCU:\Control Panel\Desktop" `
+            -Force | Out-Null
+
+          Set-ItemProperty `
+            -Path "HKCU:\Control Panel\Desktop" `
+            -Name "Wallpaper" `
+            -Value ""
+
+          # Menu animation OFF
+          Set-ItemProperty `
+            -Path "HKCU:\Control Panel\Desktop" `
+            -Name "MenuShowDelay" `
+            -Value "0"
+
+          # Full window drag OFF
+          Set-ItemProperty `
+            -Path "HKCU:\Control Panel\Desktop" `
+            -Name "DragFullWindows" `
+            -Value "0"
+
+          # Explorer animations OFF
+          New-Item `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
+            -Force | Out-Null
+
+          Set-ItemProperty `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
+            -Name "TaskbarAnimations" `
+            -Type DWord `
+            -Value 0
+
+          Set-ItemProperty `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
+            -Name "ListviewAlphaSelect" `
+            -Type DWord `
+            -Value 0
+
+          Set-ItemProperty `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" `
+            -Name "ListviewShadow" `
+            -Type DWord `
+            -Value 0
+
+          # Transparency OFF
+          New-Item `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" `
+            -Force | Out-Null
+
+          Set-ItemProperty `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" `
+            -Name "EnableTransparency" `
+            -Type DWord `
+            -Value 0
+
+          Write-Host "Windows optimized."
+
+      # ============================================================
+      # 5. MAX RDP PERFORMANCE
+      # ============================================================
+      - name: MAX RDP Performance
+        shell: powershell
+        run: |
+          Write-Host "=== MAX RDP PERFORMANCE ==="
+
+          $rdpPolicy = `
+            "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
+
+          New-Item `
+            -Path $rdpPolicy `
+            -Force | Out-Null
+
+          # Wallpaper OFF
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "fDisableWallpaper" `
+            -PropertyType DWord `
+            -Value 1 `
+            -Force | Out-Null
+
+          # Full window drag OFF
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "fDisableFullWindowDrag" `
+            -PropertyType DWord `
+            -Value 1 `
+            -Force | Out-Null
+
+          # Menu animation OFF
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "fDisableMenuAnims" `
+            -PropertyType DWord `
+            -Value 1 `
+            -Force | Out-Null
+
+          # Cursor effects OFF
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "fDisableCursors" `
+            -PropertyType DWord `
+            -Value 1 `
+            -Force | Out-Null
+
+          # Bitmap cache ON
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "UseClientBitmapCache" `
+            -PropertyType DWord `
+            -Value 1 `
+            -Force | Out-Null
+
+          # Prefer UDP
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "SelectTransport" `
+            -PropertyType DWord `
+            -Value 1 `
+            -Force | Out-Null
+
+          # UDP allowed
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "fClientDisableUDP" `
+            -PropertyType DWord `
+            -Value 0 `
+            -Force | Out-Null
+
+          # Drive redirection OFF
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "fDisableCdm" `
+            -PropertyType DWord `
+            -Value 1 `
+            -Force | Out-Null
+
+          # Printer redirection OFF
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "fDisableCpm" `
+            -PropertyType DWord `
+            -Value 1 `
+            -Force | Out-Null
+
+          # COM redirection OFF
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "fDisableCcm" `
+            -PropertyType DWord `
+            -Value 1 `
+            -Force | Out-Null
+
+          # Clipboard ON
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "fDisableClip" `
+            -PropertyType DWord `
+            -Value 0 `
+            -Force | Out-Null
+
+          Write-Host "RDP optimized."
+
+      # ============================================================
+      # 6. ENABLE AUDIO
+      # ============================================================
+      - name: Enable RDP Audio
+        shell: powershell
+        run: |
+          Write-Host "=== AUDIO ==="
+
+          Set-Service `
+            -Name AudioEndpointBuilder `
+            -StartupType Automatic `
+            -ErrorAction SilentlyContinue
+
+          Set-Service `
+            -Name Audiosrv `
+            -StartupType Automatic `
+            -ErrorAction SilentlyContinue
+
+          Start-Service `
+            -Name AudioEndpointBuilder `
+            -ErrorAction SilentlyContinue
+
+          Start-Service `
+            -Name Audiosrv `
+            -ErrorAction SilentlyContinue
+
+          $rdpPolicy = `
+            "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
+
+          New-Item `
+            -Path $rdpPolicy `
+            -Force | Out-Null
+
+          # Audio playback ON
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "fDisableAudioPlayback" `
+            -PropertyType DWord `
+            -Value 0 `
+            -Force | Out-Null
+
+          # Audio capture ON
+          New-ItemProperty `
+            -Path $rdpPolicy `
+            -Name "fDisableAudioCapture" `
+            -PropertyType DWord `
+            -Value 0 `
+            -Force | Out-Null
+
+          Write-Host "Audio enabled."
+
+      # ============================================================
+      # 7. REDUCE BACKGROUND SERVICES
+      # ============================================================
+      - name: Reduce Background Services
+        shell: powershell
+        run: |
+          Write-Host "=== REDUCING BACKGROUND LOAD ==="
+
+          Stop-Service `
+            -Name WSearch `
+            -Force `
+            -ErrorAction SilentlyContinue
+
+          Set-Service `
+            -Name WSearch `
+            -StartupType Disabled `
+            -ErrorAction SilentlyContinue
+
+          Stop-Service `
+            -Name SysMain `
+            -Force `
+            -ErrorAction SilentlyContinue
+
+          Set-Service `
+            -Name SysMain `
+            -StartupType Disabled `
+            -ErrorAction SilentlyContinue
+
+          Write-Host "Background load reduced."
+
+      # ============================================================
+      # 8. FIREWALL
+      # ============================================================
+      - name: Configure Firewall
+        shell: powershell
+        run: |
+          Write-Host "=== FIREWALL ==="
+
+          Enable-NetFirewallRule `
+            -DisplayGroup "Remote Desktop" `
+            -ErrorAction SilentlyContinue
+
+          $rule = Get-NetFirewallRule `
+            -DisplayName "MAX SPEED RDP 3389" `
+            -ErrorAction SilentlyContinue
+
+          if (-not $rule) {
+              New-NetFirewallRule `
+                -DisplayName "MAX SPEED RDP 3389" `
+                -Direction Inbound `
+                -Protocol TCP `
+                -LocalPort 3389 `
+                -Action Allow `
+                -Profile Any
+          }
+
+          Write-Host "Firewall ready."
+
+      # ============================================================
+      # 9. INSTALL TAILSCALE
+      # ============================================================
+      - name: Install Tailscale
+        shell: powershell
+        run: |
+          Write-Host "=== INSTALLING TAILSCALE ==="
+
+          $msi = "$env:TEMP\tailscale.msi"
+
+          Invoke-WebRequest `
+            -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" `
+            -OutFile $msi
+
+          Start-Process `
+            msiexec.exe `
+            -ArgumentList "/i `"$msi`" /qn /norestart" `
+            -Wait
+
+          Start-Sleep -Seconds 5
+
+          Write-Host "Tailscale installed."
+
+      # ============================================================
+      # 10. CONNECT TAILSCALE
+      # ============================================================
+      - name: Connect Tailscale
+        shell: powershell
+        run: |
+          Write-Host "=== CONNECTING TAILSCALE ==="
+
+          $ts = "C:\Program Files\Tailscale\tailscale.exe"
+
+          if (-not (Test-Path $ts)) {
+              throw "Tailscale executable not found."
+          }
+
+          & $ts up `
+            --authkey="$env:TAILSCALE_AUTHKEY" `
+            --unattended=true `
+            --hostname="gh-rdp-$env:GITHUB_RUN_ID"
+
+          Start-Sleep -Seconds 5
+
+          Write-Host ""
+          Write-Host "=== TAILSCALE STATUS ==="
+
+          & $ts status
+
+      # ============================================================
+      # 11. GET TAILSCALE IP
+      # ============================================================
+      - name: Get Tailscale IP
+        shell: powershell
+        run: |
+          Write-Host "=== GETTING TAILSCALE IP ==="
+
+          $ts = "C:\Program Files\Tailscale\tailscale.exe"
+
+          $ip = $null
+
+          for ($i = 1; $i -le 20; $i++) {
+
+              $result = & $ts ip -4 2>$null
+
+              if ($result) {
+                  $ip = ($result | Select-Object -First 1).Trim()
+              }
+
+              if ($ip -and $ip -match '^100\.') {
+                  break
+              }
+
+              Write-Host "Waiting for Tailscale IP... $i/20"
+
+              Start-Sleep -Seconds 3
+          }
+
+          if (-not $ip) {
+              throw "Tailscale IPv4 address not found."
+          }
+
+          "TAILSCALE_IP=$ip" | Out-File `
+            -FilePath $env:GITHUB_ENV `
+            -Append
+
+          Write-Host ""
+          Write-Host "Tailscale IP: $ip"
+
+      # ============================================================
+      # 12. VERIFY RDP
+      # ============================================================
+      - name: Verify RDP
+        shell: powershell
+        run: |
+          Write-Host "=== RDP SERVICE ==="
+
+          Get-Service TermService |
+            Format-List Name,Status,StartType
+
+          Write-Host ""
+          Write-Host "=== RDP LISTENER ==="
+
+          $listener = Get-NetTCPConnection `
+            -LocalPort 3389 `
+            -State Listen `
+            -ErrorAction SilentlyContinue
+
+          if ($listener) {
+              Write-Host "RDP LISTENER: ACTIVE"
+              $listener |
+                Format-Table LocalAddress,LocalPort,State
+          }
+          else {
+              Write-Host "RDP LISTENER NOT FOUND"
+          }
+
+      # ============================================================
+      # 13. TEST PORT
+      # ============================================================
+      - name: Test RDP Connection
+        shell: powershell
+        run: |
+          Write-Host "=== TESTING RDP 3389 ==="
+
+          $test = Test-NetConnection `
+            -ComputerName $env:TAILSCALE_IP `
+            -Port 3389 `
+            -WarningAction SilentlyContinue
+
+          Write-Host ""
+          Write-Host "Target IP:"
+          Write-Host $env:TAILSCALE_IP
+
+          Write-Host ""
+          Write-Host "Port: 3389"
+
+          Write-Host ""
+          Write-Host "TCP TEST:"
+          Write-Host $test.TcpTestSucceeded
+
+      # ============================================================
+      # 14. NETWORK DIAGNOSTICS
+      # ============================================================
+      - name: Network Diagnostics
+        shell: powershell
+        run: |
+          Write-Host "========================================"
+          Write-Host "       TAILSCALE NETWORK STATUS"
+          Write-Host "========================================"
+
+          $ts = "C:\Program Files\Tailscale\tailscale.exe"
+
+          Write-Host ""
+          Write-Host "TAILSCALE STATUS"
+          & $ts status
+
+          Write-Host ""
+          Write-Host "TAILSCALE IP"
+          & $ts ip -4
+
+          Write-Host ""
+          Write-Host "NETCHECK"
+          & $ts netcheck
+
+          Write-Host ""
+          Write-Host "RDP LISTENER"
+          Get-NetTCPConnection `
+            -LocalPort 3389 `
+            -State Listen `
+            -ErrorAction SilentlyContinue
+
+      # ============================================================
+      # 15. CONNECTION INFORMATION
+      # ============================================================
+      - name: RDP Connection Information
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "=============================================="
+          Write-Host "             MAX SPEED RDP"
+          Write-Host "=============================================="
+          Write-Host ""
+          Write-Host "PC Address : $env:TAILSCALE_IP"
+          Write-Host "Port       : 3389"
+          Write-Host "Username   : RDP"
+          Write-Host "Password   : $env:RDP_PASSWORD"
+          Write-Host ""
+          Write-Host "Audio      : ENABLED"
+          Write-Host "Bitmap     : ENABLED"
+          Write-Host "Wallpaper  : DISABLED"
+          Write-Host "Animations : DISABLED"
+          Write-Host "UDP        : PREFERRED"
+          Write-Host "Drive      : DISABLED"
+          Write-Host "Printer    : DISABLED"
+          Write-Host "Low Lag    : MAX"
+          Write-Host ""
+          Write-Host "=============================================="
+
+      # ============================================================
+      # 16. KEEP ALIVE
+      # ============================================================
+      - name: Keep RDP Alive
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "=============================================="
+          Write-Host "           RDP RUNNER IS ACTIVE"
+          Write-Host "=============================================="
+          Write-Host ""
+
+          Write-Host "IP: $env:TAILSCALE_IP"
+          Write-Host "Port: 3389"
+          Write-Host ""
+
+          while ($true) {
+
+              $time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+              $rdp = Get-NetTCPConnection `
+                -LocalPort 3389 `
+                -State Listen `
+                -ErrorAction SilentlyContinue
+
+              if ($rdp) {
+                  Write-Host "[$time] RDP ACTIVE | IP: $env:TAILSCALE_IP"
+              }
+              else {
+                  Write-Host "[$time] WARNING: RDP LISTENER NOT FOUND"
+              }
+
+              Start-Sleep -Seconds 60
+          }
